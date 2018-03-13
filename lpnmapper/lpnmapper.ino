@@ -45,11 +45,12 @@ int fsm_state = NO_GPS;
 unsigned long fsm_flag;
 
 //Defines where on the server the points go. 
-//1 for mapping & data collection
+//1 for mapping & data collection test
 //2 for static hum&temp measures
-//3 for static triangulation
-//9 test to be discarded
-static int track_number = 1;
+//3-12 for static triangulation
+//20 for data collection mapping production
+//99 test to be discarded
+static int track_number = 20;
 
 #define SECOND 1000
 int t_check_fix = 5*SECOND;
