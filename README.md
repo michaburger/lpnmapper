@@ -46,7 +46,11 @@ The track number is sent in the payload and stored together with the point in th
   
 <img src="img/screen.jpg" alt="Screen UI" width="500" />
 The track number is displayed at the bottom right of the screen.
-
+  
+## LoRaWAN payload
+  
+<img src="img/payload.jpg" alt="Payload description" />
+  
 ## Library modifications
 Some libraries have been modified for this project:
   

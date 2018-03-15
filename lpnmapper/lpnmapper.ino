@@ -323,6 +323,17 @@ void sendLoraTX(){
   //get GPS data
   gps_lat = gps.location.lat()*10000000;
   gps_lon = gps.location.lng()*10000000;
+  
+  //speed between 0 and 255 to fit into 1 byte. To be divided by 2 by the server.
+  int gps_speed = (int) 2*gps.speed.kmph();
+  if(gps_speed > 255) gps_speed = 255;
+  else if (gps_speed <0) gps_speed = 0;
+
+  //course is between 0 and 360° --> map between 0 an 180, to be multiplied by 2 by the server
+  int gps_course = (int) 0.5*gps.course.deg();
+  if(gps_course > 255) gps_course = 255;
+  else if(gps_course <0) gps_course = 0;
+  
   int nbSat = gps.satellites.value();
   if(nbSat>255) nbSat=255;
   int gpsHDOP = gps.hdop.value();
@@ -344,9 +355,11 @@ void sendLoraTX(){
   tx_buf[13] = nbSat & 0x00ff;
   tx_buf[14] = (gpsHDOP & 0xff00) >> 8;
   tx_buf[15] = gpsHDOP & 0x00ff;
-  tx_buf[16] = track_number & 0x00ff;
+  tx_buf[16] = gps_speed & 0x00ff;
+  tx_buf[17] = gps_course & 0x00ff;
+  tx_buf[18] = track_number & 0x00ff;
            
-  sprintf(lora_data, "%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X", tx_buf[0], tx_buf[1], tx_buf[2], tx_buf[3], tx_buf[4], tx_buf[5], tx_buf[6], tx_buf[7], tx_buf[8], tx_buf[9], tx_buf[10], tx_buf[11], tx_buf[12], tx_buf[13], tx_buf[14], tx_buf[15], tx_buf[16] );
+  sprintf(lora_data, "%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X", tx_buf[0], tx_buf[1], tx_buf[2], tx_buf[3], tx_buf[4], tx_buf[5], tx_buf[6], tx_buf[7], tx_buf[8], tx_buf[9], tx_buf[10], tx_buf[11], tx_buf[12], tx_buf[13], tx_buf[14], tx_buf[15], tx_buf[16], tx_buf[17], tx_buf[18] );
            
    //displayLoraTX(true); 
    tx_data = String(lora_data);
