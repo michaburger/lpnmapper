@@ -53,6 +53,12 @@ unsigned long fsm_flag;
 //99 test to be discarded
 int track_number = 20;
 
+#define TRK_SUSPEND 0
+#define TRK_TRIANG3 3
+#define TRK_TRIANG4 4
+#define TRK_TRIANG5 5
+#define TRK_MAPPING 20
+
 #define SECOND 1000
 int t_check_fix = 5*SECOND;
 int t_update_wait = 200;
@@ -361,21 +367,21 @@ void loop() {
     if(digitalRead(buttonPin)){
       switch (track_number)
       {
-        case 20:
-          track_number = 3;
+        case TRK_MAPPING:
+          track_number = TRK_TRIANG3;
           SeeedOled.clearDisplay();
           oledPutInfo();
           delay(SECOND);
           break;
-        case 3:
-          track_number = 0;
+        case TRK_TRIANG3:
+          track_number = TRK_SUSPEND;
           SeeedOled.clearDisplay();
           oledPut(1,"SUSPEND");
           oledPutInfo();
           delay(SECOND);
           break;
-        case 0:
-          track_number = 20;
+        case TRK_SUSPEND:
+          track_number = TRK_MAPPING;
           SeeedOled.clearDisplay();
           oledPutInfo();
           delay(SECOND);
