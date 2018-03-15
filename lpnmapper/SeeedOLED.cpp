@@ -151,6 +151,29 @@ void SeeedOLED::sendCommand(unsigned char command)
   Wire.endTransmission();    		     // End I2C communication
 }
 
+void SeeedOLED::setRotation(bool Rotation) // Rotation=true/false
+{
+   if (Rotation == true) {
+      // Display rotation 180°
+      sendCommand(0xA8); // mux ratio(3F=[64 lines])
+      sendCommand(0x3F);
+      sendCommand(0xA0); // segment remap(top / bottom reversed)
+      sendCommand(0xC9);
+      sendCommand(0xA0); // segment remap(left / right reversed)
+      sendCommand(0xA1);
+   }
+   else {
+      // Display rotation 0°
+      sendCommand(0xA8); // mux ratio(3F=[64 lines])
+      sendCommand(0x3F);
+      sendCommand(0xA0); // segment remap(top / bottom normal)
+      sendCommand(0xC0);
+      sendCommand(0xA0); // segment remap(left / right normal)
+      sendCommand(0xA0);
+   }
+   setTextXY(0,0);
+}
+
 void SeeedOLED::setBrightness(unsigned char Brightness)
 {
    sendCommand(SeeedOLED_Set_Brightness_Cmd);

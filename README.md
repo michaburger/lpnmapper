@@ -1,87 +1,36 @@
 # Swisscom LPN Mapping device
 
-One Paragraph of project description goes here
+This device features is built on [Tuino 1](www.tuino.io) with [ST I-CUBE LRWAN](https://github.com/gimasi/GMX_LR1_AT_MODEM) and features the [Grove humidity and temperature sensor](http://wiki.seeed.cc/Grove-Temperature_and_Humidity_Sensor_Pro/) and a [Trimble GPS (Sparkfun Copernicus II DIP)](https://www.sparkfun.com/products/11858?_ga=2.245291909.129632425.1521044459-524054582.1519123891) on top of it. For the user interface, a [Grove OLED 0.96''](http://wiki.seeed.cc/Grove-OLED_Display_0.96inch/) and a [Grove button](http://wiki.seeed.cc/Grove-Button/) were added. 
 
-## Getting Started
+## Hardware and connections
 
-These instructions will get you a copy of the project up and running on your local machine for development and testing purposes. See deployment for notes on how to deploy the project on a live system.
+![Prototype box](/img/proto1.jpg)
+Connections
+Box
 
-### Prerequisites
-
-What things you need to install the software and how to install them
+## Library modifications
 
 ```
 Give examples
 ```
 
-### Installing
+## Server & Backend
 
-A step by step series of examples that tell you have to get a development env running
+Spaghetti:
+Webmap:
 
-Say what the step will be
 
-```
-Give the example
-```
+## Built on
 
-And repeat
+* [Tuino 1](https://tuino.io) - IoT reference development platform based on Arduino
 
-```
-until finished
-```
-
-End with an example of getting some data out of the system or using it for a little demo
-
-## Running the tests
-
-Explain how to run the automated tests for this system
-
-### Break down into end to end tests
-
-Explain what these tests test and why
-
-```
-Give an example
-```
-
-### And coding style tests
-
-Explain what these tests test and why
-
-```
-Give an example
-```
-
-## Deployment
-
-Add additional notes about how to deploy this on a live system
-
-## Built With
-
-* [Dropwizard](http://www.dropwizard.io/1.0.2/docs/) - The web framework used
-* [Maven](https://maven.apache.org/) - Dependency Management
-* [ROME](https://rometools.github.io/rome/) - Used to generate RSS Feeds
 
 ## Contributing
 
-Please read [CONTRIBUTING.md](https://gist.github.com/PurpleBooth/b24679402957c63ec426) for details on our code of conduct, and the process for submitting pull requests to us.
-
-## Versioning
-
-We use [SemVer](http://semver.org/) for versioning. For the versions available, see the [tags on this repository](https://github.com/your/project/tags). 
 
 ## Authors
 
 * **Billie Thompson** - *Initial work* - [PurpleBooth](https://github.com/PurpleBooth)
 
-See also the list of [contributors](https://github.com/your/project/contributors) who participated in this project.
 
 ## License
-
-This project is licensed under the MIT License - see the [LICENSE.md](LICENSE.md) file for details
-
-## Acknowledgments
-
-* Hat tip to anyone who's code was used
-* Inspiration
-* etc

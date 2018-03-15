@@ -44,13 +44,14 @@ char states[6][20] = {"NO_GPS", "NO_FIX", "CHECK_PRECISION", "GPS_IMPROVE", "MAP
 int fsm_state = NO_GPS;
 unsigned long fsm_flag;
 
-//Defines where on the server the points go. 
+//Defines where on the server the points go, and 0 suspends the mapping.
+//0 suspend mapping
 //1 for mapping & data collection test
 //2 for static hum&temp measures
 //3-12 for static triangulation
 //20 for data collection mapping production
 //99 test to be discarded
-static int track_number = 20;
+int track_number = 20;
 
 #define SECOND 1000
 int t_check_fix = 5*SECOND;
@@ -61,13 +62,11 @@ int t_update = 500;
 int t_precision = 30*SECOND; //ATTENTION: Overflow at 32'000
 int t_lora_tx = 2*SECOND;
 
-
 static const uint32_t GPSBaud = 4800;
-
-int ledState = 0;
 
 char string[128];
 
+int buttonPin = D4;
 int humidityPin = D5;
 
 // The TinyGPS++ object
@@ -87,7 +86,10 @@ void setup() {
 
   //state machine setup
   fsm_flag = 0;
-  
+
+  //button
+  pinMode(buttonPin,INPUT);
+ 
   String DevEui,NewDevEui;
   String AppEui,NewAppEui;
   String AppKey,NewAppKey;
@@ -108,9 +110,10 @@ void setup() {
   // Init Oled
   SeeedOled.init();  //initialze SEEED OLED display
 
-  SeeedOled.clearDisplay();          //clear the screen and set start position to top left corner
-  SeeedOled.setNormalDisplay();      //Set display to normal mode (i.e non-inverse mode)
-  SeeedOled.setHorizontalMode();           //Set addressing mode to Page Mode
+  SeeedOled.clearDisplay();         //clear the screen and set start position to top left corner
+  SeeedOled.setNormalDisplay();     //Set display to normal mode
+  SeeedOled.setHorizontalMode();    //Set addressing mode to Page Mode
+  SeeedOled.setRotation(true);      //Modified SeeedOled library
 
 
   // GMX-LR init pass callback function
@@ -278,10 +281,15 @@ void oledPutState(){
   SeeedOled.clearDisplay();
   SeeedOled.setTextXY(1, 0);
   SeeedOled.putString(states[fsm_state]);
+  oledPutInfo();
+}
+
+void oledPutInfo(){
   SeeedOled.setTextXY(5, 0);
   SeeedOled.putString("Micha Burger");
   SeeedOled.setTextXY(6, 0);
-  SeeedOled.putString("v1 03/2018");
+  sprintf(string, "v1 03/2018   t%d",track_number);
+  SeeedOled.putString(string);
 }
 
 //Put more information to the display
@@ -345,92 +353,124 @@ void sendLoraTX(){
 }
 
 
-void loop() {       
-    
-    //check if GPS is still connected
-    while (Serial.available() > 0) 
-      if (gps.encode(Serial.read())){
-        
-      //check GPS fix
-      if(fsm_state!=NO_GPS && (!gps.location.isValid() || !gps.time.isValid() || gps.satellites.value()<1))
-        fsm_state = NO_FIX;
-      
-      oledPutState();
-      
-      switch (fsm_state)
-      {
-        case NO_GPS: 
-          if (gps.charsProcessed() > 10)
-            fsm_state = NO_FIX;
-          
-          if(gps.location.isValid() && gps.time.isValid() && gps.satellites.value()>0) 
-            fsm_state = CHECK_PRECISION;
+void loop() {
+    //IMPROVE: Get rid of delay() statements in state machine!!!
+    //--> Do with timer & millis()
 
-          delay(t_check_fix);
+    //change suspend mode or track number
+    if(digitalRead(buttonPin)){
+      switch (track_number)
+      {
+        case 20:
+          track_number = 3;
+          SeeedOled.clearDisplay();
+          oledPutInfo();
+          delay(SECOND);
           break;
-    
-        case NO_FIX:
-          if(gps.location.isValid() && gps.time.isValid() && gps.satellites.value()>0)
-            fsm_state = CHECK_PRECISION;
-       
-          delay(t_check_fix);
+        case 3:
+          track_number = 0;
+          SeeedOled.clearDisplay();
+          oledPut(1,"SUSPEND");
+          oledPutInfo();
+          delay(SECOND);
           break;
-    
-        case CHECK_PRECISION:
-          if(gps.hdop.value()<MIN_HDOP && gps.hdop.value()>0){
-            //store time when the fix was accepted
-            fsm_flag = millis();
-            fsm_state = GPS_IMPROVE;
-          }
-          sprintf(string, "HDOP: %d", gps.hdop.value());
-          oledPut(2,string);
-          sprintf(string, "Satellites: %d",gps.satellites.value());
-          oledPut(3,string);
-          delay(t_check_fix);
+        case 0:
+          track_number = 20;
+          SeeedOled.clearDisplay();
+          oledPutInfo();
+          delay(SECOND);
           break;
-    
-        case GPS_IMPROVE:
-          if(millis()-fsm_flag > t_precision) {
-            fsm_flag = millis();
-            fsm_state = MAPPING;
-            oledPut(2,"Done, start mapping!");
-          }
-          else{
-            sprintf(string, "Wait: %d", (int)(0.001 * (t_precision - (millis()-fsm_flag))));
-            oledPut(2,string);
-          }
-          //continuously check fix and precision
-          if(gps.hdop.value()>MIN_HDOP){
-            //store time when the fix was accepted
-            fsm_state = CHECK_PRECISION;
-            oledPut(2,"GPS precision lost");
-          }
-          delay(t_improve);
-          break;
-    
-        case MAPPING:
-          //continuously check fix and precision
-          if(gps.hdop.value()>MIN_HDOP){
-            //store time when the fix was accepted
-            fsm_state = CHECK_PRECISION;
-            oledPut(2,"GPS precision lost");
-          }
+      }
+    }
+
+    if(track_number) {
+      //check if GPS is still connected
+      while (Serial.available() > 0 && !digitalRead(buttonPin)) 
+        if (gps.encode(Serial.read())){
           
-          if(gps.location.isUpdated()){
-            sprintf(string, "Since: %d s", (int) (0.001 * (millis()-fsm_flag)));
+        //check GPS fix
+        if(fsm_state!=NO_GPS && (!gps.location.isValid() || !gps.time.isValid() || gps.satellites.value()<1))
+          fsm_state = NO_FIX;
+        
+        oledPutState();
+        
+        switch (fsm_state)
+        {
+          case NO_GPS: 
+            if (gps.charsProcessed() > 10)
+              fsm_state = NO_FIX;
+            
+            if(gps.location.isValid() && gps.time.isValid() && gps.satellites.value()>0) 
+              fsm_state = CHECK_PRECISION;
+  
+            delay(t_check_fix);
+            break;
+      
+          case NO_FIX:
+            if(gps.location.isValid() && gps.time.isValid() && gps.satellites.value()>0)
+              fsm_state = CHECK_PRECISION;
+         
+            delay(t_check_fix);
+            break;
+      
+          case CHECK_PRECISION:
+            if(gps.hdop.value()<MIN_HDOP && gps.hdop.value()>0){
+              //store time when the fix was accepted
+              fsm_flag = millis();
+              fsm_state = GPS_IMPROVE;
+            }
+            sprintf(string, "HDOP: %d", gps.hdop.value());
             oledPut(2,string);
             sprintf(string, "Satellites: %d",gps.satellites.value());
-            oledPut(3,string); 
-            sendLoraTX();
-            delay(t_lora_tx);
-          }
-          else {
-            sprintf(string, "Since: %d s", (int) (0.001 * (millis()-fsm_flag)));
-            oledPut(2,string);
-            oledPut(3,"No update, wait...");
-            delay(t_update);
-          }
-          break;
-      }  
+            oledPut(3,string);
+            delay(t_check_fix);
+            break;
+      
+          case GPS_IMPROVE:
+            if(millis()-fsm_flag > t_precision) {
+              fsm_flag = millis();
+              fsm_state = MAPPING;
+              oledPut(2,"Done, start mapping!");
+            }
+            else{
+              sprintf(string, "Wait: %d", (int)(0.001 * (t_precision - (millis()-fsm_flag))));
+              oledPut(2,string);
+            }
+            //continuously check fix and precision
+            if(gps.hdop.value()>MIN_HDOP){
+              //store time when the fix was accepted
+              fsm_state = CHECK_PRECISION;
+              oledPut(2,"GPS precision lost");
+            }
+            delay(t_improve);
+            break;
+      
+          case MAPPING:
+            //continuously check fix and precision
+            if(gps.hdop.value()>MIN_HDOP){
+              //store time when the fix was accepted
+              fsm_state = CHECK_PRECISION;
+              oledPut(2,"GPS precision lost");
+            }
+            
+            if(gps.location.isUpdated()){
+              sprintf(string, "Since: %d s", (int) (0.001 * (millis()-fsm_flag)));
+              oledPut(2,string);
+              sprintf(string, "HDOP: %d", gps.hdop.value());
+              oledPut(3,string);
+              sprintf(string, "Satellites: %d",gps.satellites.value());
+              oledPut(4,string); 
+              sendLoraTX();
+              delay(t_lora_tx);
+            }
+            else {
+              sprintf(string, "Since: %d s", (int) (0.001 * (millis()-fsm_flag)));
+              oledPut(2,string);
+              oledPut(3,"No update, wait...");
+              delay(t_update);
+            }
+            break;
+        }  
+      }
     }
 }

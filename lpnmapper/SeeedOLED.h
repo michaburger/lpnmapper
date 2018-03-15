@@ -76,6 +76,8 @@ void init(void);
 void setNormalDisplay();
 void setInverseDisplay();
 
+void setRotation(bool Rotation);
+
 void sendCommand(unsigned char command);
 void sendData(unsigned char Data);
 
