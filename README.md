@@ -1,8 +1,8 @@
 # Swisscom LPN Mapping device
 
-<img src="img/proto1.jpg" alt="Prototype box" width="500" />
+<img src="img/proto1.jpg" alt="Prototype box" width="500" align="middle"/>
 
-This device features is built on [Tuino 1](www.tuino.io) with [ST I-CUBE LRWAN](https://github.com/gimasi/GMX_LR1_AT_MODEM) and features the [Grove humidity and temperature sensor](http://wiki.seeed.cc/Grove-Temperature_and_Humidity_Sensor_Pro/) and a [Trimble GPS (Sparkfun Copernicus II DIP)](https://www.sparkfun.com/products/11858?_ga=2.245291909.129632425.1521044459-524054582.1519123891) on top of it. For the user interface, a [Grove OLED 0.96''](http://wiki.seeed.cc/Grove-OLED_Display_0.96inch/) and a [Grove button](http://wiki.seeed.cc/Grove-Button/) were added. 
+This device is built on [Tuino 1](www.tuino.io) with [ST I-CUBE LRWAN](https://github.com/gimasi/GMX_LR1_AT_MODEM) and features the [Grove humidity and temperature sensor](http://wiki.seeed.cc/Grove-Temperature_and_Humidity_Sensor_Pro/) and a [Trimble GPS (Sparkfun Copernicus II DIP)](https://www.sparkfun.com/products/11858?_ga=2.245291909.129632425.1521044459-524054582.1519123891) on top of it. For the user interface, a [Grove OLED 0.96''](http://wiki.seeed.cc/Grove-OLED_Display_0.96inch/) and a [Grove button](http://wiki.seeed.cc/Grove-Button/) were added. 
 
 ## Hardware and connections
 Connections
@@ -13,7 +13,7 @@ Box
 
 With the button, the user can switch between different tracking modes or suspend the tracking. This is particularily useful if you meet somebody on the campus and stop for a chat, then you don't want the same point to be mapped multiple times.
 
-<img src="img/track_states.jpg" alt="Track state machine" width="300" />
+<img src="img/track_states.jpg" alt="Track state machine" width="500" align="middle" />
 The schematics of this first, outer state machine is shown above. As the rest of the code still uses the delay() function, the button has to be pressed for several seconds in order to take the change into account. 
 
 ###Track numbers
@@ -25,7 +25,7 @@ The track number is sent in the payload and stored together with the point in th
 * Track 20: ESP data collection (latest version)
 * Track 99: Test, to be discarded by the server
 
-<img src="img/screen.jpg" alt="Screen UI" width="200" />
+<img src="img/screen.jpg" alt="Screen UI" width="500" align="middle" />
 The track number is displayed at the bottom right of the screen.
 
 ## Library modifications
