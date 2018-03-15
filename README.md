@@ -35,7 +35,7 @@ The inner state machine is described above. The following states can be taken:
 * GPS_IMPROVE: Because in the first 30s after the GPS fix, the precision of the GPS is not optimal yet, we wait 30s in this state before starting the mapping.
 * MAPPING: The GPS signal and the signal from the HT sensor is registered and sent with LoRaWAN in the pre-defined time interval.
   
-###Track numbers
+###Track numbers  
 The track number is sent in the payload and stored together with the point in the server. It is later used to filter the points according to the experiment or store them in a different part of the database.
 * Track 0: Mapping suspended (nothing sent)
 * Track 1: ESP data collection (test, some values missing)
