@@ -4,7 +4,7 @@ This device features is built on [Tuino 1](www.tuino.io) with [ST I-CUBE LRWAN](
 
 ## Hardware and connections
 
-![Prototype box](/img/proto1.jpg)
+![Prototype box](img/proto1.jpg)
 Connections
 Box
 
