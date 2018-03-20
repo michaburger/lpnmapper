@@ -43,6 +43,7 @@ char states[6][20] = {"NO_GPS", "NO_FIX", "CHECK_PRECISION", "GPS_IMPROVE", "MAP
 
 int fsm_state = NO_GPS;
 unsigned long fsm_flag;
+unsigned long state_entry;
 
 //Defines where on the server the points go, and 0 suspends the mapping.
 //0 suspend mapping
@@ -67,6 +68,7 @@ int t_update = 500;
 //the time to wait with registering after GPS fix
 int t_precision = 30*SECOND; //ATTENTION: Overflow at 32'000
 int t_lora_tx = 2*SECOND;
+int t_trilat = 5*SECOND;
 
 static const uint32_t GPSBaud = 4800;
 
@@ -381,12 +383,6 @@ void loop() {
       switch (track_number)
       {
         case TRK_MAPPING:
-          track_number = TRK_TRILAT3;
-          SeeedOled.clearDisplay();
-          oledPutInfo();
-          delay(SECOND);
-          break;
-        case TRK_TRILAT3:
           track_number = TRK_SUSPEND;
           SeeedOled.clearDisplay();
           oledPut(1,"SUSPEND");
@@ -394,15 +390,42 @@ void loop() {
           delay(SECOND);
           break;
         case TRK_SUSPEND:
+          track_number = TRK_TRILAT3;
+          SeeedOled.clearDisplay();
+          oledPut(1,"ESPLANADE");
+          oledPutInfo();
+          delay(SECOND);
+          break;
+        case TRK_TRILAT3:
+          track_number = TRK_TRILAT4;
+          SeeedOled.clearDisplay();
+          state_entry = millis();
+          fsm_flag = millis();
+          oledPut(1,"STONES");
+          oledPutInfo();
+          delay(SECOND);
+          break;
+        case TRK_TRILAT4:
+          track_number = TRK_TRILAT5;
+          SeeedOled.clearDisplay();
+          state_entry = millis();
+          fsm_flag = millis();
+          oledPut(1,"ROLEX");
+          oledPutInfo();
+          delay(SECOND);
+          break;
+        case TRK_TRILAT5:
           track_number = TRK_MAPPING;
           SeeedOled.clearDisplay();
+          state_entry = millis();
+          fsm_flag = millis();
           oledPutInfo();
           delay(SECOND);
           break;
       }
     }
 
-    if(track_number) {
+    if(track_number == TRK_MAPPING) {
       //check if GPS is still connected
       while (Serial.available() > 0 && !digitalRead(buttonPin)) 
         if (gps.encode(Serial.read())){
@@ -491,5 +514,15 @@ void loop() {
             break;
         }  
       }
+    }
+
+    else{
+      //only start sending after 10 seconds to avoid wrong attribution
+      if(millis()-state_entry>10*SECOND)
+        if(millis()-fsm_flag>5*SECOND){
+          sendLoraTX();
+          fsm_flag = millis();
+        }
+          
     }
 }
