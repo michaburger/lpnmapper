@@ -48,15 +48,15 @@ unsigned long fsm_flag;
 //0 suspend mapping
 //1 for mapping & data collection test
 //2 for static hum&temp measures
-//3-12 for static triangulation
+//3-12 for static trilateration
 //20 for data collection mapping production
 //99 test to be discarded
 int track_number = 20;
 
 #define TRK_SUSPEND 0
-#define TRK_TRIANG3 3
-#define TRK_TRIANG4 4
-#define TRK_TRIANG5 5
+#define TRK_TRILAT3 3
+#define TRK_TRILAT4 4
+#define TRK_TRILAT5 5
 #define TRK_MAPPING 20
 
 #define SECOND 1000
@@ -381,12 +381,12 @@ void loop() {
       switch (track_number)
       {
         case TRK_MAPPING:
-          track_number = TRK_TRIANG3;
+          track_number = TRK_TRILAT3;
           SeeedOled.clearDisplay();
           oledPutInfo();
           delay(SECOND);
           break;
-        case TRK_TRIANG3:
+        case TRK_TRILAT3:
           track_number = TRK_SUSPEND;
           SeeedOled.clearDisplay();
           oledPut(1,"SUSPEND");

@@ -40,7 +40,7 @@ The track number is sent in the payload and stored together with the point in th
 * Track 0: Mapping suspended (nothing sent)
 * Track 1: ESP data collection (test, some values missing)
 * Track 2: Static hum & temp measures
-* Tracks 3-12: Static triangulation (10 different fixed points)
+* Tracks 3-12: Static trilateration (10 different fixed points)
 * Track 20: ESP data collection (latest version)
 * Track 99: Test, to be discarded by the server  
   
