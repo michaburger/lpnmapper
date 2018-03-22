@@ -28,22 +28,20 @@
 DHT dht(DHTPIN, DHTTYPE);
 
 //State machine definitions
-#define NO_GPS          0
-#define NO_FIX          1
-#define CHECK_PRECISION 2
-#define GPS_IMPROVE     3
-#define MAPPING         4
-#define ERR             5
-
+enum {NO_GPS, NO_FIX, CHECK_PRECISION, GPS_IMPROVE, MAPPING, ERR};
 char states[6][20] = {"NO_GPS", "NO_FIX", "CHECK_PRECISION", "GPS_IMPROVE", "MAPPING", "ERROR"};
 #define NB_STATES 6
 
 //minimum hdop to accept GPS fix
 #define MIN_HDOP 500
+#define HDOP_SEND 500
 
 int fsm_state = NO_GPS;
 unsigned long fsm_flag;
 unsigned long state_entry;
+
+enum {TRK_SUSPEND,TRK_TEST, TRK_WEATHER, TRK_TRILAT3, TRK_TRILAT4, TRK_TRILAT5, TRK_TRILAT6, TRK_TRILAT7, 
+      TRK_TRILAT8, TRK_MAPPING = 20, TRK_DISTANCE = 30};
 
 //Defines where on the server the points go, and 0 suspends the mapping.
 //0 suspend mapping
@@ -51,14 +49,9 @@ unsigned long state_entry;
 //2 for static hum&temp measures
 //3-12 for static trilateration
 //20 for data collection mapping production
+//30 for distance vs rssi measure
 //99 test to be discarded
-int track_number = 20;
-
-#define TRK_SUSPEND 0
-#define TRK_TRILAT3 3
-#define TRK_TRILAT4 4
-#define TRK_TRILAT5 5
-#define TRK_MAPPING 20
+int track_number = TRK_MAPPING;
 
 #define SECOND 1000
 int t_check_fix = 5*SECOND;
@@ -81,6 +74,7 @@ int humidityPin = D5;
 TinyGPSPlus gps;
 
 String oled_string;
+String sf;
 
 // LoRa RX interrupt
 bool data_received = false;
@@ -267,9 +261,9 @@ void setup() {
   Serial.println(gmxLR_getADR());
 
   //Set SF, doesn't work. Ask Massimo!
-  dr = String(gmxLR_setSF(String(LORA_SF10)));
+  String(gmxLR_setSF(String(LORA_SF9),sf));
   Serial.print("SF Data rate: ");
-  Serial.println(dr);
+  Serial.println(sf);
   
   Serial.print("TXpow: ");
   String answ = "";
@@ -367,7 +361,9 @@ void sendLoraTX(){
    tx_data = String(lora_data);
 
    //Set SF, doesn't work. Ask Massimo!
-   gmxLR_setSF(String(LORA_SF10));
+   gmxLR_setSF(String(LORA_SF9),sf);
+   Serial.print("SF response: ");
+   Serial.println(sf);
       
    gmxLR_TXData(tx_data);
    //displayLoraTX(false);
@@ -378,11 +374,22 @@ void loop() {
     //IMPROVE: Get rid of delay() statements in state machine!!!
     //--> Do with timer & millis()
 
+    //for testing SF change only when track number is 99!!
+    //track_number = 99;
+    //sendLoraTX();
+    //delay(2000);
+
     //change suspend mode or track number
     if(digitalRead(buttonPin)){
       switch (track_number)
       {
         case TRK_MAPPING:
+          track_number = TRK_DISTANCE;
+          SeeedOled.clearDisplay();
+          oledPutInfo();
+          delay(SECOND);
+          break;
+        case TRK_DISTANCE:
           track_number = TRK_SUSPEND;
           SeeedOled.clearDisplay();
           oledPut(1,"SUSPEND");
@@ -401,7 +408,7 @@ void loop() {
           SeeedOled.clearDisplay();
           state_entry = millis();
           fsm_flag = millis();
-          oledPut(1,"STONES");
+          oledPut(1,"STONE CIRCLE");
           oledPutInfo();
           delay(SECOND);
           break;
@@ -410,22 +417,47 @@ void loop() {
           SeeedOled.clearDisplay();
           state_entry = millis();
           fsm_flag = millis();
-          oledPut(1,"ROLEX");
+          oledPut(1,"ROLEX SOUTH");
           oledPutInfo();
           delay(SECOND);
           break;
         case TRK_TRILAT5:
-          track_number = TRK_MAPPING;
+          track_number = TRK_TRILAT6;
           SeeedOled.clearDisplay();
           state_entry = millis();
           fsm_flag = millis();
+          oledPut(1,"INNOVATION PARK");
+          oledPutInfo();
+          delay(SECOND);
+          break;
+        case TRK_TRILAT6:
+          track_number = TRK_TRILAT7;
+          SeeedOled.clearDisplay();
+          state_entry = millis();
+          fsm_flag = millis();
+          oledPut(1,"TIR FEDERAL");
+          oledPutInfo();
+          delay(SECOND);
+          break;
+        case TRK_TRILAT7:
+          track_number = TRK_TRILAT8;
+          SeeedOled.clearDisplay();
+          state_entry = millis();
+          fsm_flag = millis();
+          oledPut(1,"ARGAND");
+          oledPutInfo();
+          delay(SECOND);
+          break;
+        case TRK_TRILAT8:
+          track_number = TRK_MAPPING;
+          SeeedOled.clearDisplay();
           oledPutInfo();
           delay(SECOND);
           break;
       }
     }
 
-    if(track_number == TRK_MAPPING) {
+    if(track_number == TRK_MAPPING || track_number == TRK_DISTANCE) {
       //check if GPS is still connected
       while (Serial.available() > 0 && !digitalRead(buttonPin)) 
         if (gps.encode(Serial.read())){
@@ -488,12 +520,6 @@ void loop() {
             break;
       
           case MAPPING:
-            //continuously check fix and precision
-            if(gps.hdop.value()>MIN_HDOP){
-              //store time when the fix was accepted
-              fsm_state = CHECK_PRECISION;
-              oledPut(2,"GPS precision lost");
-            }
             
             if(gps.location.isUpdated()){
               sprintf(string, "Since: %d s", (int) (0.001 * (millis()-fsm_flag)));
@@ -502,7 +528,8 @@ void loop() {
               oledPut(3,string);
               sprintf(string, "Satellites: %d",gps.satellites.value());
               oledPut(4,string); 
-              sendLoraTX();
+              //only send acceptable HDOP
+              if(gps.hdop.value() > 0 && gps.hdop.value() < HDOP_SEND) sendLoraTX();
               delay(t_lora_tx);
             }
             else {

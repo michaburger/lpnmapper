@@ -33,7 +33,7 @@ The inner state machine is described above. The following states can be taken:
 * NO_FIX: No valid GPS coordinates, there is no GPS reception.
 * CHECK_PRECISION: GPS Fix is available, but only with few satellites and bad precision. In this state we wait for the HDOP to drop below 500.
 * GPS_IMPROVE: Because in the first 30s after the GPS fix, the precision of the GPS is not optimal yet, we wait 30s in this state before starting the mapping.
-* MAPPING: The GPS signal and the signal from the HT sensor is registered and sent with LoRaWAN in the pre-defined time interval.
+* MAPPING: The GPS signal and the signal from the HT sensor is registered and sent with LoRaWAN in the pre-defined time interval, if the HDOP value is acceptable (HDOP_SEND = 500).
   
 ### Track numbers  
 The track number is sent in the payload and stored together with the point in the server. It is later used to filter the points according to the experiment or store them in a different part of the database.
@@ -41,7 +41,8 @@ The track number is sent in the payload and stored together with the point in th
 * Track 1: ESP data collection (test, some values missing)
 * Track 2: Static hum & temp measures
 * Tracks 3-12: Static trilateration (10 different fixed points)
-* Track 20: ESP data collection (latest version)
+* Track 20: ESP/RSSI data collection SF12 (latest version) 
+* Track 30: ESP/RSSI data collection line of sight with gateway (SF12)
 * Track 99: Test, to be discarded by the server  
   
 <img src="img/screen.jpg" alt="Screen UI" width="500" />

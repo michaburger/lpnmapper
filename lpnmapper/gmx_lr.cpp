@@ -311,11 +311,11 @@ byte gmxLR_isNetworkJoined(void)
 // Lora Network
 
 //modified by Micha Burger 09.03.2018
-byte gmxLR_setSF(String sf){
+byte gmxLR_setSF(String sf, String& ret){
   
   _sendCmd( "AT+DR="+sf+"\r" );
 
-  return(_parseResponse(dummyResponse));    
+  return(_parseResponse(ret));    
 
 }
 

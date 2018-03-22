@@ -121,7 +121,7 @@ byte gmxLR_getMessageConfirmation(void);
  * Lower level LoRaWAN Functions
  */ 
 
-byte gmxLR_setSF(String sf);
+byte gmxLR_setSF(String sf, String& ret);
 
 byte gmxLR_getADR();
 byte gmxLR_setADR(String on_off);
