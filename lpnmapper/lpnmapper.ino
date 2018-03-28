@@ -34,33 +34,42 @@ char states[6][20] = {"NO_GPS", "NO_FIX", "CHECK_PRECISION", "GPS_IMPROVE", "MAP
 
 //minimum hdop to accept GPS fix
 #define MIN_HDOP 500
+//minimum hdop to send point with lorawan
 #define HDOP_SEND 500
 
+#define SF LORA_SF9
+//Tested minimum delay times between two transmissions when changing txpower, for each SF
+int min_delay_txpow[6] = {2500,2000,1500,1000,1000,1000};
+
 int fsm_state = NO_GPS;
+int fsm_pck_count = 0;
+unsigned long five_minutes = 300000;
 unsigned long fsm_flag;
 unsigned long state_entry;
 
 enum {TRK_SUSPEND,TRK_TEST, TRK_WEATHER, TRK_TRILAT3, TRK_TRILAT4, TRK_TRILAT5, TRK_TRILAT6, TRK_TRILAT7, 
-      TRK_TRILAT8, TRK_MAPPING = 20, TRK_DISTANCE = 30};
+      TRK_TRILAT8, TRK_MAPPING = 20, TRK_DISTANCE = 30, DISCARD = 99};
+     
 
 //Defines where on the server the points go, and 0 suspends the mapping.
 //0 suspend mapping
 //1 for mapping & data collection test
 //2 for static hum&temp measures
 //3-12 for static trilateration
-//20 for data collection mapping production
+//20 for data collection mapping production 
 //30 for distance vs rssi measure
 //99 test to be discarded
 int track_number = TRK_MAPPING;
 
+#define DISABLE_ADR 0 //ADR has to be enabled to set custom SF
+
 #define SECOND 1000
 int t_check_fix = 5*SECOND;
-int t_update_wait = 200;
 int t_improve = SECOND;
-int t_update = 500;
+int t_update = 200;
 //the time to wait with registering after GPS fix
 int t_precision = 30*SECOND; //ATTENTION: Overflow at 32'000
-int t_lora_tx = 2*SECOND;
+int t_lora_tx = SECOND;
 int t_trilat = 5*SECOND;
 
 static const uint32_t GPSBaud = 4800;
@@ -74,7 +83,6 @@ int humidityPin = D5;
 TinyGPSPlus gps;
 
 String oled_string;
-String sf;
 
 // LoRa RX interrupt
 bool data_received = false;
@@ -256,19 +264,20 @@ void setup() {
   SeeedOled.putString("Joined!");
 
   //Disable ADR
-  gmxLR_setADR("0");
+  if(DISABLE_ADR) gmxLR_setADR("0");
   Serial.print("ADR: ");
   Serial.println(gmxLR_getADR());
 
-  //Set SF, doesn't work. Ask Massimo!
-  String(gmxLR_setSF(String(LORA_SF9),sf));
-  Serial.print("SF Data rate: ");
+  //Set spreading factor
+  String sf = "";
+  gmxLR_setSF(String(SF),sf);
+  Serial.print("Data rate (SF): ");
   Serial.println(sf);
   
   Serial.print("TXpow: ");
   String answ = "";
   gmxLR_getTXPower(answ);
-  Serial.print(answ);
+  Serial.println(answ);
 
   delay(2*SECOND);
   SeeedOled.clearDisplay();
@@ -301,7 +310,7 @@ void oledPut(int line, char *str){
 }
 
 //Send packet with LoRa
-void sendLoraTX(){
+void sendLoraTX(int txpow){
 
   char lora_data[128];
   byte tx_buf[128];
@@ -354,19 +363,44 @@ void sendLoraTX(){
   tx_buf[16] = gps_speed & 0x00ff;
   tx_buf[17] = gps_course & 0x00ff;
   tx_buf[18] = track_number & 0x00ff;
+  tx_buf[19] = txpow & 0x00ff;
            
-  sprintf(lora_data, "%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X", tx_buf[0], tx_buf[1], tx_buf[2], tx_buf[3], tx_buf[4], tx_buf[5], tx_buf[6], tx_buf[7], tx_buf[8], tx_buf[9], tx_buf[10], tx_buf[11], tx_buf[12], tx_buf[13], tx_buf[14], tx_buf[15], tx_buf[16], tx_buf[17], tx_buf[18] );
+  sprintf(lora_data, "%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X", tx_buf[0], tx_buf[1], tx_buf[2], tx_buf[3], tx_buf[4], tx_buf[5], tx_buf[6], tx_buf[7], tx_buf[8], tx_buf[9], tx_buf[10], tx_buf[11], tx_buf[12], tx_buf[13], tx_buf[14], tx_buf[15], tx_buf[16], tx_buf[17], tx_buf[18], tx_buf[19] );
            
    //displayLoraTX(true); 
    tx_data = String(lora_data);
 
-   //Set SF, doesn't work. Ask Massimo!
-   gmxLR_setSF(String(LORA_SF9),sf);
-   Serial.print("SF response: ");
-   Serial.println(sf);
-      
-   gmxLR_TXData(tx_data);
+   String answ = "";
+
+   //multiple trials to set TX power
+   for(int i=0; i<5; i++){
+     gmxLR_setTXPower(String(txpow));
+     delay(50);
+     gmxLR_getTXPower(answ);
+     if(int(answ[0])-48 == txpow){
+       //When ADR is enabled, SF change has to be enforced before every TX
+       gmxLR_setSF(String(SF),answ);
+       gmxLR_TXData(tx_data);
+       /*
+       Serial.print("TXpow sent: ");
+       Serial.println(tx_pow);
+       Serial.print("TXpow chip: ");
+   
+       gmxLR_getTXPower(answ);
+       Serial.println(answ);
+       */
+       i=5;
+     }
+   }
+
+   
    //displayLoraTX(false);
+}
+
+void state_change_reset(){
+  fsm_pck_count = 0;
+  state_entry = millis();
+  fsm_flag = millis();
 }
 
 
@@ -374,24 +408,30 @@ void loop() {
     //IMPROVE: Get rid of delay() statements in state machine!!!
     //--> Do with timer & millis()
 
-    //for testing SF change only when track number is 99!!
-    //track_number = 99;
-    //sendLoraTX();
-    //delay(2000);
+    /*
+    int rand_txpow = random(0,5);
+    //for testing SF: only when track number is 99!!
+    track_number = DISCARD;
+    sendLoraTX(rand_txpow);
+    delay(2000);
 
+*/
     //change suspend mode or track number
     if(digitalRead(buttonPin)){
       switch (track_number)
       {
         case TRK_MAPPING:
-          track_number = TRK_DISTANCE;
+          track_number = TRK_WEATHER;
           SeeedOled.clearDisplay();
+          state_change_reset();
+          oledPut(1,"WEATHER");
           oledPutInfo();
           delay(SECOND);
           break;
-        case TRK_DISTANCE:
+        case TRK_WEATHER:
           track_number = TRK_SUSPEND;
           SeeedOled.clearDisplay();
+          state_change_reset();
           oledPut(1,"SUSPEND");
           oledPutInfo();
           delay(SECOND);
@@ -399,6 +439,7 @@ void loop() {
         case TRK_SUSPEND:
           track_number = TRK_TRILAT3;
           SeeedOled.clearDisplay();
+          state_change_reset();
           oledPut(1,"ESPLANADE");
           oledPutInfo();
           delay(SECOND);
@@ -406,8 +447,7 @@ void loop() {
         case TRK_TRILAT3:
           track_number = TRK_TRILAT4;
           SeeedOled.clearDisplay();
-          state_entry = millis();
-          fsm_flag = millis();
+          state_change_reset();
           oledPut(1,"STONE CIRCLE");
           oledPutInfo();
           delay(SECOND);
@@ -415,8 +455,7 @@ void loop() {
         case TRK_TRILAT4:
           track_number = TRK_TRILAT5;
           SeeedOled.clearDisplay();
-          state_entry = millis();
-          fsm_flag = millis();
+          state_change_reset();
           oledPut(1,"ROLEX SOUTH");
           oledPutInfo();
           delay(SECOND);
@@ -424,8 +463,7 @@ void loop() {
         case TRK_TRILAT5:
           track_number = TRK_TRILAT6;
           SeeedOled.clearDisplay();
-          state_entry = millis();
-          fsm_flag = millis();
+          state_change_reset();
           oledPut(1,"INNOVATION PARK");
           oledPutInfo();
           delay(SECOND);
@@ -433,8 +471,7 @@ void loop() {
         case TRK_TRILAT6:
           track_number = TRK_TRILAT7;
           SeeedOled.clearDisplay();
-          state_entry = millis();
-          fsm_flag = millis();
+          state_change_reset();
           oledPut(1,"TIR FEDERAL");
           oledPutInfo();
           delay(SECOND);
@@ -442,8 +479,7 @@ void loop() {
         case TRK_TRILAT7:
           track_number = TRK_TRILAT8;
           SeeedOled.clearDisplay();
-          state_entry = millis();
-          fsm_flag = millis();
+          state_change_reset();
           oledPut(1,"ARGAND");
           oledPutInfo();
           delay(SECOND);
@@ -451,6 +487,7 @@ void loop() {
         case TRK_TRILAT8:
           track_number = TRK_MAPPING;
           SeeedOled.clearDisplay();
+          state_change_reset();
           oledPutInfo();
           delay(SECOND);
           break;
@@ -529,7 +566,9 @@ void loop() {
               sprintf(string, "Satellites: %d",gps.satellites.value());
               oledPut(4,string); 
               //only send acceptable HDOP
-              if(gps.hdop.value() > 0 && gps.hdop.value() < HDOP_SEND) sendLoraTX();
+              if(gps.hdop.value() > 0 && gps.hdop.value() < HDOP_SEND) {
+                sendLoraTX(0);
+              }
               delay(t_lora_tx);
             }
             else {
@@ -543,11 +582,31 @@ void loop() {
       }
     }
 
-    else{
+    else if(track_number == TRK_WEATHER){
+      //Send every 5 minutes
+      if(millis()-fsm_flag>five_minutes){
+        sendLoraTX(0);
+        delay(min_delay_txpow[SF]);
+        fsm_pck_count++;
+        sprintf(string, "Packets: %d",fsm_pck_count);
+        oledPut(2,string);
+        fsm_flag = millis();
+      }
+    }
+
+    else if (track_number != TRK_SUSPEND){
       //only start sending after 10 seconds to avoid wrong attribution
       if(millis()-state_entry>10*SECOND)
         if(millis()-fsm_flag>5*SECOND){
-          sendLoraTX();
+          sendLoraTX(0);
+          delay(min_delay_txpow[SF]);
+          sendLoraTX(3);
+          delay(min_delay_txpow[SF]);
+          sendLoraTX(5);
+          delay(min_delay_txpow[SF]);
+          fsm_pck_count++;
+          sprintf(string, "Packets: %d",fsm_pck_count);
+          oledPut(2,string);
           fsm_flag = millis();
         }
           

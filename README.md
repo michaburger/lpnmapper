@@ -24,7 +24,7 @@ The antenna, the sensors, UI components and optionally the GPS antenna have to b
 With the button, the user can switch between different tracking modes or suspend the tracking. This is particularily useful if you meet somebody on the campus and stop for a chat, then you don't want the same point to be mapped multiple times.
 
 <img src="img/track_states.jpg" alt="Track state machine" width="500" />
-The schematics of this first, outer state machine is shown above. As the rest of the code still uses the delay() function, the button has to be pressed for several seconds in order to take the change into account. 
+The schematics of this first, outer state machine is shown above. More states can easily be added, depending on the mapping tracks needed. As the rest of the code still uses the delay() function, the button has to be pressed for several seconds in order to take the change into account. 
 
 <img src="img/state_machine.jpg" alt="State machine" />
 The inner state machine is described above. The following states can be taken:  
@@ -60,16 +60,16 @@ In order to change the spreading factor with disabled ADR, those lines were adde
 gmx_lr.h:
 
 ```
-byte gmxLR_setSF(String sf);
+byte gmxLR_setSF(String sf, String& rep);
 ```
 gmx_lr.cpp:
 ```
 //modified by Micha Burger 09.03.2018
-byte gmxLR_setSF(String sf){
+byte gmxLR_setSF(String sf, String& rep){
   
   _sendCmd( "AT+DR="+sf+"\r" );
 
-  return(_parseResponse(dummyResponse));    
+  return(_parseResponse(rep));    
 
 }
 ```
