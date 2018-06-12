@@ -31,13 +31,14 @@ DHT dht(DHTPIN, DHTTYPE);
 enum {NO_GPS, NO_FIX, CHECK_PRECISION, GPS_IMPROVE, MAPPING, ERR};
 char states[6][20] = {"NO_GPS", "NO_FIX", "CHECK_PRECISION", "GPS_IMPROVE", "MAPPING", "ERROR"};
 #define NB_STATES 6
+#define NB_TRANSMISSIONS 12
 
 //minimum hdop to accept GPS fix
 #define MIN_HDOP 500
 //minimum hdop to send point with lorawan
 #define HDOP_SEND 500
 
-#define SF LORA_SF9
+#define SF LORA_SF7
 //Tested minimum delay times between two transmissions when changing txpower, for each SF
 int min_delay_txpow[6] = {2500,2000,1500,1000,1000,1000};
 
@@ -48,7 +49,7 @@ unsigned long fsm_flag;
 unsigned long state_entry;
 
 enum {TRK_SUSPEND,TRK_TEST, TRK_WEATHER, TRK_TRILAT3, TRK_TRILAT4, TRK_TRILAT5, TRK_TRILAT6, TRK_TRILAT7, 
-      TRK_TRILAT8, TRK_MAPPING = 20, TRK_DISTANCE = 30, DISCARD = 99};
+      TRK_TRILAT8, TRK_TRILAT9, TRK_TRILAT10, TRK_TRILAT11, TRK_MAPPING = 20, TRK_DISTANCE = 30, TRK_DEVCOMPARE = 40, TRK_STATIC = 50, TRK_DYNAMIC, DISCARD = 99};
      
 
 //Defines where on the server the points go, and 0 suspends the mapping.
@@ -58,6 +59,9 @@ enum {TRK_SUSPEND,TRK_TEST, TRK_WEATHER, TRK_TRILAT3, TRK_TRILAT4, TRK_TRILAT5, 
 //3-12 for static trilateration
 //20 for data collection mapping production 
 //30 for distance vs rssi measure
+//40 for comparing multiple devices
+//50 for validation (static)
+//51 for validation dynamic while moving
 //99 test to be discarded
 int track_number = TRK_MAPPING;
 
@@ -68,9 +72,10 @@ int t_check_fix = 5*SECOND;
 int t_improve = SECOND;
 int t_update = 200;
 //the time to wait with registering after GPS fix
-int t_precision = 30*SECOND; //ATTENTION: Overflow at 32'000
+int t_precision = 15*SECOND; //ATTENTION: Overflow at 32'000
 int t_lora_tx = SECOND;
-int t_trilat = 5*SECOND;
+int t_lora_val = 30*SECOND;
+int t_trilat = 3*SECOND;
 
 static const uint32_t GPSBaud = 4800;
 
@@ -421,14 +426,14 @@ void loop() {
       switch (track_number)
       {
         case TRK_MAPPING:
-          track_number = TRK_WEATHER;
+          track_number = TRK_STATIC;
           SeeedOled.clearDisplay();
           state_change_reset();
-          oledPut(1,"WEATHER");
+          oledPut(1,"STATIC");
           oledPutInfo();
           delay(SECOND);
           break;
-        case TRK_WEATHER:
+        case TRK_STATIC:
           track_number = TRK_SUSPEND;
           SeeedOled.clearDisplay();
           state_change_reset();
@@ -437,13 +442,15 @@ void loop() {
           delay(SECOND);
           break;
         case TRK_SUSPEND:
-          track_number = TRK_TRILAT3;
+          track_number = TRK_MAPPING;
           SeeedOled.clearDisplay();
           state_change_reset();
-          oledPut(1,"ESPLANADE");
+          oledPut(1,"MAPPING");
           oledPutInfo();
           delay(SECOND);
           break;
+
+          /*
         case TRK_TRILAT3:
           track_number = TRK_TRILAT4;
           SeeedOled.clearDisplay();
@@ -485,16 +492,42 @@ void loop() {
           delay(SECOND);
           break;
         case TRK_TRILAT8:
+          track_number = TRK_TRILAT9;
+          SeeedOled.clearDisplay();
+          state_change_reset();
+          oledPut(1,"COSANDEY");
+          oledPutInfo();
+          delay(SECOND);
+          break;
+        case TRK_TRILAT9:
+          track_number = TRK_TRILAT10;
+          SeeedOled.clearDisplay();
+          state_change_reset();
+          oledPut(1,"INM");
+          oledPutInfo();
+          delay(SECOND);
+          break;
+        case TRK_TRILAT10:
+          track_number = TRK_TRILAT11;
+          SeeedOled.clearDisplay();
+          state_change_reset();
+          oledPut(1,"POLYDOME");
+          oledPutInfo();
+          delay(SECOND);
+          break;
+        case TRK_TRILAT11:
           track_number = TRK_MAPPING;
           SeeedOled.clearDisplay();
           state_change_reset();
           oledPutInfo();
           delay(SECOND);
-          break;
+          break;   
+
+          */
       }
     }
 
-    if(track_number == TRK_MAPPING || track_number == TRK_DISTANCE) {
+    if(track_number == TRK_MAPPING || track_number == TRK_STATIC) {
       //check if GPS is still connected
       while (Serial.available() > 0 && !digitalRead(buttonPin)) 
         if (gps.encode(Serial.read())){
@@ -510,10 +543,7 @@ void loop() {
           case NO_GPS: 
             if (gps.charsProcessed() > 10)
               fsm_state = NO_FIX;
-            
-            if(gps.location.isValid() && gps.time.isValid() && gps.satellites.value()>0) 
-              fsm_state = CHECK_PRECISION;
-  
+              
             delay(t_check_fix);
             break;
       
@@ -567,9 +597,25 @@ void loop() {
               oledPut(4,string); 
               //only send acceptable HDOP
               if(gps.hdop.value() > 0 && gps.hdop.value() < HDOP_SEND) {
-                sendLoraTX(0);
+                if(track_number == TRK_STATIC || track_number == TRK_DYNAMIC){
+                  int i;
+                  //send N transmissions in a row
+                  for(i=0; i<NB_TRANSMISSIONS; i++){
+                    sendLoraTX(0);
+                    delay(t_lora_tx);
+                  }
+                  //wait round a minute before repeating
+                  delay(t_lora_val);
+                  delay(t_lora_val);
+                }
+                else{
+                  sendLoraTX(0);
+                  delay(t_lora_tx);
+                }
+                
+
               }
-              delay(t_lora_tx);
+              
             }
             else {
               sprintf(string, "Since: %d s", (int) (0.001 * (millis()-fsm_flag)));
@@ -597,12 +643,8 @@ void loop() {
     else if (track_number != TRK_SUSPEND){
       //only start sending after 10 seconds to avoid wrong attribution
       if(millis()-state_entry>10*SECOND)
-        if(millis()-fsm_flag>5*SECOND){
+        if(millis()-fsm_flag>t_trilat){
           sendLoraTX(0);
-          delay(min_delay_txpow[SF]);
-          sendLoraTX(3);
-          delay(min_delay_txpow[SF]);
-          sendLoraTX(5);
           delay(min_delay_txpow[SF]);
           fsm_pck_count++;
           sprintf(string, "Packets: %d",fsm_pck_count);
