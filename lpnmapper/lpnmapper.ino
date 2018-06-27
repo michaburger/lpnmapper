@@ -28,10 +28,12 @@
 DHT dht(DHTPIN, DHTTYPE);
 
 //State machine definitions
-enum {NO_GPS, NO_FIX, CHECK_PRECISION, GPS_IMPROVE, MAPPING, ERR};
-char states[6][20] = {"NO_GPS", "NO_FIX", "CHECK_PRECISION", "GPS_IMPROVE", "MAPPING", "ERROR"};
-#define NB_STATES 6
-#define NB_TRANSMISSIONS 12
+enum {NO_GPS, NO_FIX, CHECK_PRECISION, GPS_IMPROVE, MAPPING, EVAL, ERR};
+#define NB_STATES 7
+#define STATE_STR_LEN 20
+char states[NB_STATES][STATE_STR_LEN] = {"NO_GPS          ", "NO_FIX          ", "CHECK_PRECISION ", 
+                                         "GPS_IMPROVE     ", "MAPPING         ", "EVAL            ", "ERROR           "};
+#define NB_TRANSMISSIONS 9
 
 //minimum hdop to accept GPS fix
 #define MIN_HDOP 500
@@ -42,28 +44,32 @@ char states[6][20] = {"NO_GPS", "NO_FIX", "CHECK_PRECISION", "GPS_IMPROVE", "MAP
 //Tested minimum delay times between two transmissions when changing txpower, for each SF
 int min_delay_txpow[6] = {2500,2000,1500,1000,1000,1000};
 
-int fsm_state = NO_GPS;
-int fsm_pck_count = 0;
+unsigned int fsm_state = NO_GPS;
+unsigned int fsm_pck_count = 0;
 unsigned long five_minutes = 300000;
 unsigned long fsm_flag;
 unsigned long state_entry;
+unsigned long eval_wait_flag;
+unsigned int pck_counter = 0;
 
 enum {TRK_SUSPEND,TRK_TEST, TRK_WEATHER, TRK_TRILAT3, TRK_TRILAT4, TRK_TRILAT5, TRK_TRILAT6, TRK_TRILAT7, 
-      TRK_TRILAT8, TRK_TRILAT9, TRK_TRILAT10, TRK_TRILAT11, TRK_MAPPING = 20, TRK_DISTANCE = 30, TRK_DEVCOMPARE = 40, TRK_STATIC = 50, TRK_DYNAMIC, DISCARD = 99};
-     
+      TRK_TRILAT8, TRK_TRILAT9, TRK_TRILAT10, TRK_TRILAT11, TRK_MAP_EPFL = 20, TRK_MAP_LAUSANNE, TRK_DISTANCE = 30, 
+      TRK_DEVCOMPARE = 40, TRK_EVAL_EPFL = 50, TRK_EVAL_LAUSANNE, DISCARD = 99};
+
 
 //Defines where on the server the points go, and 0 suspends the mapping.
 //0 suspend mapping
 //1 for mapping & data collection test
 //2 for static hum&temp measures
 //3-12 for static trilateration
-//20 for data collection mapping production 
+//20 for data collection mapping EPFL
+//21 for data collection mapping Lausanne
 //30 for distance vs rssi measure
 //40 for comparing multiple devices
-//50 for validation (static)
-//51 for validation dynamic while moving
+//50 for model validation EPFL
+//51 for model validation Lausanne
 //99 test to be discarded
-int track_number = TRK_MAPPING;
+int track_number = TRK_MAP_EPFL;
 
 #define DISABLE_ADR 0 //ADR has to be enabled to set custom SF
 
@@ -74,20 +80,18 @@ int t_update = 200;
 //the time to wait with registering after GPS fix
 int t_precision = 15*SECOND; //ATTENTION: Overflow at 32'000
 int t_lora_tx = SECOND;
-int t_lora_val = 30*SECOND;
+int t_lora_val = 10*SECOND;
 int t_trilat = 3*SECOND;
 
 static const uint32_t GPSBaud = 4800;
 
-char string[128];
+char oled_string[17];
 
 int buttonPin = D4;
 int humidityPin = D5;
 
 // The TinyGPS++ object
 TinyGPSPlus gps;
-
-String oled_string;
 
 // LoRa RX interrupt
 bool data_received = false;
@@ -251,8 +255,8 @@ void setup() {
     }
 
     SeeedOled.setTextXY(1, 0);
-    sprintf(string, "Attempt: %d", join_wait);
-    SeeedOled.putString(string);
+    sprintf(oled_string, "Attempt: %d", join_wait);
+    SeeedOled.putString(oled_string);
 
     join_wait++;
 
@@ -286,7 +290,6 @@ void setup() {
 
   delay(2*SECOND);
   SeeedOled.clearDisplay();
-  oled_string = "                                                  ";
 
   oledPutState();
 
@@ -294,24 +297,29 @@ void setup() {
 
 //put current state to OLED
 void oledPutState(){
-  SeeedOled.clearDisplay();
-  SeeedOled.setTextXY(1, 0);
+  SeeedOled.setTextXY(0, 0);
+  SeeedOled.putString("                ");
   SeeedOled.putString(states[fsm_state]);
   oledPutInfo();
 }
 
 void oledPutInfo(){
   SeeedOled.setTextXY(5, 0);
-  SeeedOled.putString("Micha Burger");
+  SeeedOled.putString("Micha Burger    ");
   SeeedOled.setTextXY(6, 0);
-  sprintf(string, "v1 03/2018   t%d",track_number);
-  SeeedOled.putString(string);
+  sprintf(oled_string, "v1 03/2018   t%d",track_number);
+  SeeedOled.putString(oled_string);
 }
 
-//Put more information to the display
+//Delete line and put new information
 void oledPut(int line, char *str){
   SeeedOled.setTextXY(line,0);
+  //clean line
+  SeeedOled.putString("                ");
+  delay(30);
+  SeeedOled.setTextXY(line,0);
   SeeedOled.putString(str);
+  delay(30);
 }
 
 //Send packet with LoRa
@@ -398,7 +406,6 @@ void sendLoraTX(int txpow){
      }
    }
 
-   
    //displayLoraTX(false);
 }
 
@@ -421,19 +428,20 @@ void loop() {
     delay(2000);
 
 */
+
     //change suspend mode or track number
     if(digitalRead(buttonPin)){
       switch (track_number)
       {
-        case TRK_MAPPING:
-          track_number = TRK_STATIC;
+        case TRK_MAP_EPFL:
+          track_number = TRK_EVAL_EPFL;
           SeeedOled.clearDisplay();
           state_change_reset();
-          oledPut(1,"STATIC");
+          oledPut(1,"EVAL EPFL");
           oledPutInfo();
           delay(SECOND);
           break;
-        case TRK_STATIC:
+        case TRK_EVAL_EPFL:
           track_number = TRK_SUSPEND;
           SeeedOled.clearDisplay();
           state_change_reset();
@@ -442,10 +450,26 @@ void loop() {
           delay(SECOND);
           break;
         case TRK_SUSPEND:
-          track_number = TRK_MAPPING;
+          track_number = TRK_MAP_LAUSANNE;
           SeeedOled.clearDisplay();
           state_change_reset();
-          oledPut(1,"MAPPING");
+          oledPut(1,"MAP LAUSANNE");
+          oledPutInfo();
+          delay(SECOND);
+          break;
+        case TRK_MAP_LAUSANNE:
+          track_number = TRK_EVAL_LAUSANNE;
+          SeeedOled.clearDisplay();
+          state_change_reset();
+          oledPut(1,"EVAL LAUSANNE");
+          oledPutInfo();
+          delay(SECOND);
+          break;
+        case TRK_EVAL_LAUSANNE:
+          track_number = TRK_MAP_EPFL;
+          SeeedOled.clearDisplay();
+          state_change_reset();
+          oledPut(1,"MAP EPFL");
           oledPutInfo();
           delay(SECOND);
           break;
@@ -527,29 +551,34 @@ void loop() {
       }
     }
 
-    if(track_number == TRK_MAPPING || track_number == TRK_STATIC) {
+
+    if(track_number == TRK_MAP_EPFL || track_number == TRK_EVAL_EPFL || track_number == TRK_MAP_LAUSANNE || track_number == TRK_EVAL_LAUSANNE) {
       //check if GPS is still connected
       while (Serial.available() > 0 && !digitalRead(buttonPin)) 
         if (gps.encode(Serial.read())){
           
         //check GPS fix
-        if(fsm_state!=NO_GPS && (!gps.location.isValid() || !gps.time.isValid() || gps.satellites.value()<1))
+        if(fsm_state!=NO_GPS && (!gps.location.isValid() || !gps.time.isValid() || gps.satellites.value()<1)){
           fsm_state = NO_FIX;
-        
-        oledPutState();
+          oledPutState();
+        }
+          
         
         switch (fsm_state)
         {
           case NO_GPS: 
-            if (gps.charsProcessed() > 10)
+            if (gps.charsProcessed() > 10){
               fsm_state = NO_FIX;
-              
+              oledPutState();
+            }
             delay(t_check_fix);
             break;
       
           case NO_FIX:
-            if(gps.location.isValid() && gps.time.isValid() && gps.satellites.value()>0)
+            if(gps.location.isValid() && gps.time.isValid() && gps.satellites.value()>0){
               fsm_state = CHECK_PRECISION;
+              oledPutState();
+            }
          
             delay(t_check_fix);
             break;
@@ -559,71 +588,93 @@ void loop() {
               //store time when the fix was accepted
               fsm_flag = millis();
               fsm_state = GPS_IMPROVE;
+              oledPutState();
             }
-            sprintf(string, "HDOP: %d", gps.hdop.value());
-            oledPut(2,string);
-            sprintf(string, "Satellites: %d",gps.satellites.value());
-            oledPut(3,string);
+            sprintf(oled_string, "HDOP: %d", gps.hdop.value());
+            oledPut(2,oled_string);
+            sprintf(oled_string, "Satellites: %d",gps.satellites.value());
+            oledPut(3,oled_string);
             delay(t_check_fix);
             break;
       
           case GPS_IMPROVE:
             if(millis()-fsm_flag > t_precision) {
               fsm_flag = millis();
-              fsm_state = MAPPING;
+              eval_wait_flag = millis() + t_lora_val;
+              if(track_number ==TRK_MAP_EPFL || track_number == TRK_MAP_LAUSANNE) {
+                fsm_state = MAPPING;
+                oledPutState();
+              }
+              else if(track_number == TRK_EVAL_EPFL || track_number == TRK_EVAL_LAUSANNE){
+                fsm_state = EVAL;
+                oledPutState();
+              }
               oledPut(2,"Done, start mapping!");
             }
             else{
-              sprintf(string, "Wait: %d", (int)(0.001 * (t_precision - (millis()-fsm_flag))));
-              oledPut(2,string);
+              sprintf(oled_string, "Wait: %d", (int)(0.001 * (t_precision - (millis()-fsm_flag))));
+              oledPut(2,oled_string);
             }
             //continuously check fix and precision
             if(gps.hdop.value()>MIN_HDOP){
               //store time when the fix was accepted
               fsm_state = CHECK_PRECISION;
+              oledPutState();
               oledPut(2,"GPS precision lost");
             }
             delay(t_improve);
             break;
       
           case MAPPING:
+            //check if in correct track
+            if(track_number == TRK_EVAL_EPFL || track_number == TRK_EVAL_LAUSANNE){
+              eval_wait_flag = millis() + t_lora_val;
+              fsm_state = EVAL;
+              oledPutState();
+              break;
+            }
+
+            sprintf(oled_string, "Since: %d s", (int) (0.001 * (millis()-fsm_flag)));
+            oledPut(2,oled_string);
+            sprintf(oled_string, "HDOP: %d", gps.hdop.value());
+            oledPut(3,oled_string);
+            sprintf(oled_string, "Satellites: %d",gps.satellites.value());
+            oledPut(4,oled_string); 
             
             if(gps.location.isUpdated()){
-              sprintf(string, "Since: %d s", (int) (0.001 * (millis()-fsm_flag)));
-              oledPut(2,string);
-              sprintf(string, "HDOP: %d", gps.hdop.value());
-              oledPut(3,string);
-              sprintf(string, "Satellites: %d",gps.satellites.value());
-              oledPut(4,string); 
               //only send acceptable HDOP
               if(gps.hdop.value() > 0 && gps.hdop.value() < HDOP_SEND) {
-                if(track_number == TRK_STATIC || track_number == TRK_DYNAMIC){
-                  int i;
-                  //send N transmissions in a row
-                  for(i=0; i<NB_TRANSMISSIONS; i++){
-                    sendLoraTX(0);
-                    delay(t_lora_tx);
-                  }
-                  //wait round a minute before repeating
-                  delay(t_lora_val);
-                  delay(t_lora_val);
-                }
-                else{
                   sendLoraTX(0);
                   delay(t_lora_tx);
-                }
-                
-
               }
-              
             }
             else {
-              sprintf(string, "Since: %d s", (int) (0.001 * (millis()-fsm_flag)));
-              oledPut(2,string);
-              oledPut(3,"No update, wait...");
+              oledPut(3,"No update, wait.");
               delay(t_update);
             }
             break;
+
+            case EVAL:
+              //check if in correct track
+              if(track_number ==TRK_MAP_EPFL || track_number == TRK_MAP_LAUSANNE){
+                fsm_state = MAPPING;
+                oledPutState();
+                break;
+              }
+             sprintf(oled_string, "Packet: %d", pck_counter);
+             oledPut(2,oled_string);
+              //wait for the time between two transmissions 
+              if(millis() - eval_wait_flag > t_lora_val){
+                sendLoraTX(0);
+                delay(t_lora_tx);
+                pck_counter++;
+                //send (N+1)*2 transmissions in a row because some of them fail
+                if(pck_counter >= (NB_TRANSMISSIONS+1)*2){
+                  eval_wait_flag = millis();
+                  pck_counter = 0;
+                }
+              }            
+              break;
         }  
       }
     }
@@ -634,8 +685,8 @@ void loop() {
         sendLoraTX(0);
         delay(min_delay_txpow[SF]);
         fsm_pck_count++;
-        sprintf(string, "Packets: %d",fsm_pck_count);
-        oledPut(2,string);
+        sprintf(oled_string, "Packets: %d",fsm_pck_count);
+        oledPut(2,oled_string);
         fsm_flag = millis();
       }
     }
@@ -647,8 +698,8 @@ void loop() {
           sendLoraTX(0);
           delay(min_delay_txpow[SF]);
           fsm_pck_count++;
-          sprintf(string, "Packets: %d",fsm_pck_count);
-          oledPut(2,string);
+          sprintf(oled_string, "Packets: %d",fsm_pck_count);
+          oledPut(2,oled_string);
           fsm_flag = millis();
         }
           
